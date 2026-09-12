@@ -1,13 +1,16 @@
 {
-  "name": "astroid-ai-runtime-test",
+  "name": "astroid-ai-cody-connection-test",
   "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node index.js"
   },
+  "engines": {
+    "node": ">=23"
+  },
   "dependencies": {
-    "@whiskeysockets/baileys": "github:doryani-ai/Baileys#fix/companion-reg-refresh",
+    "@crysnovax/baileys": "2.7.1",
     "express": "latest",
     "qrcode": "latest"
   }
