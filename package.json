@@ -7,7 +7,7 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "latest",
+    "@whiskeysockets/baileys": "github:doryani-ai/Baileys#fix/companion-reg-refresh",
     "express": "latest",
     "qrcode": "latest"
   }
