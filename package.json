@@ -10,8 +10,8 @@
 "node": ">=23"
 },
 "dependencies": {
-"@crysnovax/baileys": "https://github.com/crysnovax/baileys.git",
-"express": "latest",
-"qrcode": "latest"
+"@crysnovax/baileys": "^2.7.1",
+"express": "^5.1.0",
+"qrcode": "^1.5.4"
 }
 }
