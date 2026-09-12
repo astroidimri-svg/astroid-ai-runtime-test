@@ -1,7 +1,8 @@
 import express from "express";
 import makeWASocket, {
   useMultiFileAuthState,
-  DisconnectReason
+  DisconnectReason,
+  fetchLatestWaWebVersion
 } from "@whiskeysockets/baileys";
 import qrcode from "qrcode";
 
@@ -15,8 +16,16 @@ let connectionStatus = "starting";
 async function startWhatsApp() {
   const { state, saveCreds } = await useMultiFileAuthState("./auth");
 
+  // Get the current WhatsApp Web version directly
+  const { version, isLatest } = await fetchLatestWaWebVersion();
+
+  console.log(
+    `WhatsApp Web version: ${version.join(".")} | Latest: ${isLatest}`
+  );
+
   sock = makeWASocket({
     auth: state,
+    version,
     printQRInTerminal: false
   });
 
@@ -47,7 +56,9 @@ async function startWhatsApp() {
         console.log("Connection closed. Reconnecting...");
         setTimeout(startWhatsApp, 3000);
       } else {
-        console.log("WhatsApp logged out. A new QR code is required.");
+        console.log(
+          "WhatsApp logged out. A new QR code is required."
+        );
       }
     }
   });
