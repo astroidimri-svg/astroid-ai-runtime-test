@@ -10,7 +10,7 @@
     "node": ">=23"
   },
   "dependencies": {
-    "@crysnovax/baileys": "2.7.1",
+    "@crysnovax/baileys": "github:crysnovax/baileys",
     "express": "latest",
     "qrcode": "latest"
   }
