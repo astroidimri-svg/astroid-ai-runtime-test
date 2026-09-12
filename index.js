@@ -1,134 +1,225 @@
 import express from "express";
 import makeWASocket, {
   useMultiFileAuthState,
-  DisconnectReason,
-  fetchLatestWaWebVersion
-} from "@whiskeysockets/baileys";
+  DisconnectReason
+} from "@crysnovax/baileys";
 import qrcode from "qrcode";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-let sock;
+const AUTH_DIR = "./cody-test-auth";
+
+let sock = null;
 let qrCodeData = null;
 let connectionStatus = "starting";
+let reconnectTimer = null;
 
 async function startWhatsApp() {
-  const { state, saveCreds } = await useMultiFileAuthState("./auth");
+  try {
+    console.log("Starting WhatsApp connection...");
 
-  // Get the current WhatsApp Web version directly
-  const { version, isLatest } = await fetchLatestWaWebVersion();
+    const { state, saveCreds } =
+      await useMultiFileAuthState(AUTH_DIR);
 
-  console.log(
-    `WhatsApp Web version: ${version.join(".")} | Latest: ${isLatest}`
-  );
+    sock = makeWASocket({
+      auth: state,
+      printQRInTerminal: false,
+      browser: ["ASTROID AI", "Chrome", "1.0.0"],
+      markOnlineOnConnect: false,
+      syncFullHistory: false
+    });
 
-  sock = makeWASocket({
-    auth: state,
-    version,
-    printQRInTerminal: false
-  });
+    sock.ev.on("creds.update", saveCreds);
 
-  sock.ev.on("creds.update", saveCreds);
+    sock.ev.on("connection.update", async (update) => {
+      const {
+        connection,
+        lastDisconnect,
+        qr
+      } = update;
 
-  sock.ev.on("connection.update", async (update) => {
-    const { connection, lastDisconnect, qr } = update;
+      if (qr) {
+        qrCodeData = await qrcode.toDataURL(qr);
+        connectionStatus = "qr_ready";
 
-    if (qr) {
-      qrCodeData = await qrcode.toDataURL(qr);
-      connectionStatus = "qr_ready";
-      console.log("WhatsApp QR code is ready.");
-    }
+        console.log("QR code is ready.");
+        console.log("Open /qr to scan it.");
+      }
 
-    if (connection === "open") {
-      connectionStatus = "connected";
-      qrCodeData = null;
-      console.log("ASTROID AI WhatsApp connection established.");
-    }
+      if (connection === "open") {
+        connectionStatus = "connected";
+        qrCodeData = null;
 
-    if (connection === "close") {
-      connectionStatus = "disconnected";
+        console.log("================================");
+        console.log("WHATSAPP CONNECTED SUCCESSFULLY");
+        console.log("================================");
+      }
 
-      const statusCode =
-        lastDisconnect?.error?.output?.statusCode;
+      if (connection === "close") {
+        connectionStatus = "disconnected";
 
-      if (statusCode !== DisconnectReason.loggedOut) {
-        console.log("Connection closed. Reconnecting...");
-        setTimeout(startWhatsApp, 3000);
-      } else {
+        const statusCode =
+          lastDisconnect?.error?.output?.statusCode;
+
         console.log(
-          "WhatsApp logged out. A new QR code is required."
+          "WhatsApp connection closed.",
+          "Status:",
+          statusCode ?? "unknown"
+        );
+
+        if (statusCode === DisconnectReason.loggedOut) {
+          connectionStatus = "logged_out";
+          qrCodeData = null;
+
+          console.log(
+            "WhatsApp logged out. A new login is required."
+          );
+
+          return;
+        }
+
+        if (!reconnectTimer) {
+          console.log("Scheduling automatic reconnect...");
+
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            startWhatsApp();
+          }, 5000);
+        }
+      }
+    });
+
+    sock.ev.on("messages.upsert", async ({ messages }) => {
+      const message = messages?.[0];
+
+      if (!message?.message) return;
+      if (message.key?.fromMe) return;
+
+      const text =
+        message.message.conversation ||
+        message.message.extendedTextMessage?.text ||
+        "";
+
+      console.log(
+        "Message received:",
+        text
+      );
+
+      if (
+        text === ".ping" ||
+        text === "!ping"
+      ) {
+        await sock.sendMessage(
+          message.key.remoteJid,
+          {
+            text: "ASTROID AI 🤖 connection test is working."
+          }
         );
       }
+    });
+
+  } catch (error) {
+    console.error(
+      "WhatsApp startup error:",
+      error
+    );
+
+    connectionStatus = "error";
+
+    if (!reconnectTimer) {
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        startWhatsApp();
+      }, 5000);
     }
-  });
-
-  sock.ev.on("messages.upsert", async ({ messages }) => {
-    const message = messages[0];
-
-    if (!message?.message) return;
-    if (message.key.fromMe) return;
-
-    const text =
-      message.message.conversation ||
-      message.message.extendedTextMessage?.text ||
-      "";
-
-    console.log("Incoming message:", text);
-
-    // ASTROID AI commands must begin with "." or "!"
-    if (!text.startsWith(".") && !text.startsWith("!")) return;
-
-    const command = text.trim().split(/\s+/)[0].toLowerCase();
-
-    if (command === ".ping" || command === "!ping") {
-      await sock.sendMessage(message.key.remoteJid, {
-        text: "ASTROID AI 🤖 is online."
-      });
-    }
-  });
+  }
 }
 
 app.get("/", (req, res) => {
   res.json({
-    name: "ASTROID AI 🤖",
+    name: "ASTROID AI 🤖 CODY Connection Test",
     status: connectionStatus
   });
 });
 
-app.get("/health", (req, res) => {
+app.get("/status", (req, res) => {
   res.json({
-    status: "healthy",
-    whatsapp: connectionStatus,
+    status: connectionStatus,
+    whatsapp:
+      connectionStatus === "connected"
+        ? "connected"
+        : "not_connected",
     uptime: process.uptime()
   });
 });
 
 app.get("/qr", (req, res) => {
   if (!qrCodeData) {
-    return res.json({
-      status: connectionStatus,
-      message: "QR code is not currently available."
-    });
+    return res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta name="viewport"
+            content="width=device-width, initial-scale=1">
+          <title>ASTROID AI</title>
+        </head>
+        <body style="
+          font-family:Arial;
+          text-align:center;
+          padding:30px;
+        ">
+          <h2>ASTROID AI 🤖</h2>
+          <p>Status: ${connectionStatus}</p>
+          <p>QR code is not currently available.</p>
+        </body>
+      </html>
+    `);
   }
 
   res.send(`
     <!DOCTYPE html>
     <html>
       <head>
+        <meta name="viewport"
+          content="width=device-width, initial-scale=1">
         <title>ASTROID AI WhatsApp</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
       </head>
-      <body style="text-align:center;font-family:Arial;padding:30px">
+
+      <body style="
+        font-family:Arial;
+        text-align:center;
+        padding:20px;
+      ">
+
         <h2>ASTROID AI 🤖</h2>
-        <p>Scan this QR code with WhatsApp Linked Devices.</p>
-        <img src="${qrCodeData}" style="max-width:350px;width:100%">
+
+        <p>
+          Scan this QR code using
+          WhatsApp → Linked Devices.
+        </p>
+
+        <img
+          src="${qrCodeData}"
+          style="
+            max-width:350px;
+            width:100%;
+          "
+        >
+
+        <p>
+          Status: ${connectionStatus}
+        </p>
+
       </body>
     </html>
   `);
 });
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`ASTROID AI runtime listening on port ${PORT}`);
+  console.log(
+    `ASTROID AI test server running on port ${PORT}`
+  );
+
   startWhatsApp();
 });
